@@ -1,13 +1,15 @@
 use bytes::Bytes;
 
 mod info;
+mod pty;
+mod tun;
 mod wisp;
 
 #[tokio::main]
 async fn main() {
     let args = std::env::args().skip(1);
 
-    let mut pty: String = "/dev/pts/1".to_string();
+    let mut pty: String = "/home/endercass/fakepty".to_string();
     let mut ifname: String = "wisp0".to_string();
 
     for arg in args {
@@ -66,4 +68,36 @@ async fn main() {
     println!("{:?}", packet_vec);
     println!("{:?}", packet_bytes);
     println!("{:?}", packet_back);
+
+    tun::tun::tun_init(ifname).await.unwrap();
+
+    // let pty = Arc::new(PtyInterface::new(pty).await.unwrap());
+
+    // let pty_input_clone = pty.clone();
+    // let pty_output_clone = pty.clone();
+
+    // let input_handle = tokio::spawn(async move {
+    //     pty_input_clone.read_from_input().await;
+    // });
+
+    // let output_handle = tokio::spawn(async move {
+    //     pty_output_clone.write_to_output().await;
+    // });
+
+    // tokio::spawn(async move {
+    //     let mut count = 0;
+    //     loop {
+    //         if let Err(err) = pty.write(packet_bytes.clone()).await {
+    //             eprintln!("Error sending message: {}", err);
+    //         }
+    //         println!("Sent message {}", count);
+    //         count += 1;
+    //         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    //     }
+    // });
+
+    // input_handle.await.unwrap();
+    // output_handle.await.unwrap();
+
+    ()
 }
