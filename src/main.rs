@@ -21,6 +21,15 @@ struct Cli {
     /// MTU of created TUN device
     #[arg(short, long, default_value_t = u16::MAX)]
     mtu: u16,
+    /// IP address of created TUN device
+    #[arg(short, long, default_value = "10.0.10.2")]
+    ip: Ipv4Addr,
+    // Mask of created TUN device (defaults to /0)
+    #[arg(short = 'M', long, default_value = "0.0.0.0")]
+    mask: Ipv4Addr,
+    // Destination of created TUN device (defaults to 0.0.0.0)
+    #[arg(short, long, default_value = "0.0.0.0")]
+    dest: Ipv4Addr,
 }
 
 #[tokio::main(flavor = "multi_thread")]
@@ -41,9 +50,9 @@ async fn main() -> Result<(), Box<dyn Error + 'static>> {
     println!("Creating TUN device with name: {:?}", opts.tun);
     let tun = create_as_async(
         Configuration::default()
-            .address(Ipv4Addr::new(10, 0, 10, 2))
-            .netmask(Ipv4Addr::new(255, 255, 255, 0))
-            .destination(Ipv4Addr::new(10, 0, 10, 1))
+            .address(opts.ip)
+            .netmask(opts.mask)
+            .destination(opts.dest)
             .platform_config(|c| {
                 c.ensure_root_privileges(true);
             })
