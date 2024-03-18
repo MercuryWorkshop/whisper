@@ -1,17 +1,13 @@
 [package]
-name = "whisper-tun"
+name = "whisper"
 version = "0.1.0"
 edition = "2021"
 
-[[bin]]
-name = "whisper"
-path = "src/main.rs"
-
 [dependencies]
 bytes = "1.5.0"
-etherparse = "0.14.2"
-libc = "0.2.153"
-serde = "1.0.197"
+futures-util = { version = "0.3.30", features = ["sink"] }
+ipstack = "0.0.5"
 tokio = { version = "1.36.0", features = ["full"] }
-tokio-tun = "0.11.2"
-tun-tap = "0.1.4"
+tokio-util = { version = "0.7.10", features = ["codec"] }
+tun2 = { version = "1.2.3", features = ["async"] }
+wisp-mux = { version = "2.0.0", features = ["tokio_io"] }
