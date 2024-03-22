@@ -85,7 +85,7 @@ async fn main() -> Result<(), Box<dyn Error + 'static>> {
                     .into_asyncrw();
                 tokio::spawn(async move {
                     if let Err(err) = copy_bidirectional(&mut tcp, &mut stream).await {
-                        eprintln!("Error while forwarding TCP stream: {}", err);
+                        eprintln!("Error while forwarding TCP stream: {:?}", err);
                     }
                 });
             }
@@ -98,7 +98,7 @@ async fn main() -> Result<(), Box<dyn Error + 'static>> {
                     .into_asyncrw();
                 tokio::spawn(async move {
                     if let Err(err) = copy_bidirectional(&mut udp, &mut stream).await {
-                        eprintln!("Error while forwarding UDP datagrams: {}", err);
+                        eprintln!("Error while forwarding UDP datagrams: {:?}", err);
                     }
                 });
             }

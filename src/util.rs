@@ -153,7 +153,7 @@ pub async fn connect_to_wisp(
 
     tokio::spawn(async move {
         if let Err(err) = fut.await {
-            eprintln!("Error in Wisp multiplexor future: {}", err);
+            eprintln!("Error in Wisp multiplexor future: {:?}", err);
             abort();
         }
     });
