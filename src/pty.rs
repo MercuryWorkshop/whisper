@@ -1,4 +1,4 @@
-use std::io;
+use std::{io, path::PathBuf};
 
 use bytes::Bytes;
 use futures_util::{
@@ -12,7 +12,7 @@ use wisp_mux::{
     WispError,
 };
 
-pub async fn open_pty(file: String) -> Result<(PtyRead, PtyWrite), io::Error> {
+pub async fn open_pty(file: &PathBuf) -> Result<(PtyRead, PtyWrite), io::Error> {
     let pty = File::options().read(true).write(true).open(file).await?;
     let pty = Framed::new(pty, BytesCodec::new());
     let (tx, rx) = pty.split();

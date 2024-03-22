@@ -1,20 +1,23 @@
 mod pty;
+mod util;
 
-use std::{error::Error, net::Ipv4Addr, process::abort};
+use util::connect_to_wisp;
 
-use clap::Parser;
+use std::{error::Error, net::Ipv4Addr, path::PathBuf};
+
+use clap::{Args, Parser};
+use hyper::Uri;
 use ipstack::{IpStack, IpStackConfig};
 use tokio::io::copy_bidirectional;
 use tun2::{create_as_async, Configuration};
-use wisp_mux::{ClientMux, StreamType};
+use wisp_mux::StreamType;
 
 /// Implementation of Wisp over a pty. Exposes the Wisp connection over a TUN device.
-#[derive(Parser)]
+#[derive(Debug, Parser)]
 #[command(version = clap::crate_version!())]
 struct Cli {
-    /// Path to PTY device
-    #[arg(short, long)]
-    pty: String,
+    #[clap(flatten)]
+    wisp: WispServer,
     /// Name of created TUN device
     #[arg(short, long)]
     tun: String,
@@ -32,20 +35,22 @@ struct Cli {
     dest: Ipv4Addr,
 }
 
+#[derive(Debug, Args)]
+#[group(required = true, multiple = false)]
+struct WispServer {
+    /// Path to PTY device
+    #[arg(short, long)]
+    pty: Option<PathBuf>,
+    /// Wisp server URL
+    #[arg(short, long)]
+    url: Option<Uri>,
+}
+
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<(), Box<dyn Error + 'static>> {
     let opts = Cli::parse();
 
-    println!("Connecting to PTY: {:?}", opts.pty);
-    let (rx, tx) = pty::open_pty(opts.pty).await?;
-    let (mux, fut) = ClientMux::new(rx, tx).await?;
-
-    tokio::spawn(async move {
-        if let Err(err) = fut.await {
-            eprintln!("Error in Wisp multiplexor future: {}", err);
-            abort();
-        }
-    });
+    let mux = connect_to_wisp(&opts.wisp).await?;
 
     println!("Creating TUN device with name: {:?}", opts.tun);
     let tun = create_as_async(
