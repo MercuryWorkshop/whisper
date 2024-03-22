@@ -12,7 +12,7 @@ use tokio::io::copy_bidirectional;
 use tun2::{create_as_async, Configuration};
 use wisp_mux::StreamType;
 
-/// Implementation of Wisp over a pty. Exposes the Wisp connection over a TUN device.
+/// Wisp client that exposes the Wisp connection over a TUN device.
 #[derive(Debug, Parser)]
 #[command(version = clap::crate_version!())]
 struct Cli {
