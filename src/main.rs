@@ -2,6 +2,9 @@ mod ffi;
 mod pty;
 mod util;
 
+#[cfg(all(feature = "native-tls", feature = "rustls"))]
+compile_error!("native-tls and rustls conflict. enable only one.");
+
 use util::{connect_to_wisp, WhisperMux};
 
 use std::{error::Error, net::Ipv4Addr, path::PathBuf};
