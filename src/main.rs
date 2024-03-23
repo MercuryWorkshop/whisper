@@ -1,21 +1,23 @@
+mod ffi;
 mod pty;
 mod util;
 
 use util::{connect_to_wisp, WhisperMux};
 
-use std::{
-    error::Error,
-    ffi::{c_char, c_int, c_ushort, CStr},
-    net::Ipv4Addr,
-    path::PathBuf,
-};
+use std::{error::Error, net::Ipv4Addr, path::PathBuf};
 
 use clap::{Args, Parser};
 use hyper::Uri;
 use ipstack::{IpStack, IpStackConfig};
-use tokio::{io::copy_bidirectional, runtime::Runtime};
+use tokio::{
+    io::copy_bidirectional,
+    select,
+    sync::mpsc::{unbounded_channel, UnboundedReceiver},
+};
 use tun2::{create_as_async, AsyncDevice, Configuration};
 use wisp_mux::StreamType;
+
+use crate::util::WhisperError;
 
 /// Wisp client that exposes the Wisp connection over a TUN device.
 #[derive(Debug, Parser)]
@@ -51,11 +53,16 @@ struct WispServer {
     url: Option<Uri>,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum WhisperEvent {
+    EndFut,
+}
+
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<(), Box<dyn Error + 'static>> {
     let opts = Cli::parse();
 
-    let mux = connect_to_wisp(&opts.wisp).await?;
+    let (mux, socketaddr) = connect_to_wisp(&opts.wisp).await?;
 
     println!("Creating TUN device with name: {:?}", opts.tun);
     let tun = create_as_async(
@@ -74,42 +81,33 @@ async fn main() -> Result<(), Box<dyn Error + 'static>> {
             .up(),
     )?;
 
-    start_whisper(mux, tun, opts.mtu).await
-}
-
-/// Start whisper with a raw fd from FFI
-///
-/// # Safety
-/// Call with a valid C string in the ws argument
-#[no_mangle]
-pub unsafe extern "C" fn start_tun_ffi(fd: c_int, ws: *const c_char, mtu: c_ushort) -> bool {
-    let ws = CStr::from_ptr(ws).to_string_lossy().to_string();
-    if let Ok(rt) = Runtime::new() {
-        rt.block_on(async {
-            let mux = connect_to_wisp(&WispServer {
-                pty: None,
-                url: Some(Uri::try_from(ws)?),
-            })
-            .await?;
-            let mut cfg = Configuration::default();
-            cfg.raw_fd(fd);
-            let tun = create_as_async(&cfg)?;
-            start_whisper(mux, tun, mtu).await
-        })
-        .is_ok()
-    } else {
-        false
+    if let Some(socketaddr) = socketaddr {
+        println!("IP address of Wisp server (whitelist this): {}", socketaddr);
     }
+
+    let (_tx, rx) = unbounded_channel();
+    start_whisper(mux, tun, opts.mtu, rx).await
 }
 
-async fn start_whisper(mux: WhisperMux, tun: AsyncDevice, mtu: u16) -> Result<(), Box<dyn Error>> {
+async fn start_whisper(
+    mux: WhisperMux,
+    tun: AsyncDevice,
+    mtu: u16,
+    mut channel: UnboundedReceiver<WhisperEvent>,
+) -> Result<(), Box<dyn Error>> {
     let mut ip_stack_config = IpStackConfig::default();
     ip_stack_config.mtu(mtu);
     let mut ip_stack = IpStack::new(ip_stack_config, tun);
 
     loop {
         use ipstack::stream::IpStackStream as S;
-        match ip_stack.accept().await? {
+        let accept = select! {
+            x = ip_stack.accept() => x?,
+            x = channel.recv() => match x.ok_or(WhisperError::ChannelExited)? {
+                WhisperEvent::EndFut => break Ok(()),
+            }
+        };
+        match accept {
             S::Tcp(mut tcp) => {
                 let addr = tcp.peer_addr();
                 let mut stream = mux
