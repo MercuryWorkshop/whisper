@@ -87,17 +87,11 @@ impl<L: WebSocketWrite, R: WebSocketWrite> WebSocketWrite for EitherWebSocketWri
     }
 }
 
-pub async fn connect_to_wisp(
-    opts: &WispServer,
-) -> Result<
-    ClientMux<
-        EitherWebSocketWrite<
-            fastwebsockets::WebSocketWrite<WriteHalf<TokioIo<Upgraded>>>,
-            PtyWrite,
-        >,
-    >,
-    Box<dyn Error>,
-> {
+pub type WhisperMux = ClientMux<
+    EitherWebSocketWrite<fastwebsockets::WebSocketWrite<WriteHalf<TokioIo<Upgraded>>>, PtyWrite>,
+>;
+
+pub async fn connect_to_wisp(opts: &WispServer) -> Result<WhisperMux, Box<dyn Error>> {
     let (rx, tx) = if let Some(pty) = &opts.pty {
         println!("Connecting to PTY: {:?}", pty);
         let (rx, tx) = open_pty(pty).await?;
@@ -117,6 +111,10 @@ pub async fn connect_to_wisp(
         let port = url.port_u16().unwrap_or(if tls { 443 } else { 80 });
 
         let socket = TcpStream::connect(format!("{}:{}", host, port)).await?;
+        println!(
+            "Wisp server IP (whitelist this if routing system internet): {:?}",
+            socket.peer_addr()?
+        );
         let socket = if tls {
             let cx = TlsConnector::from(native_tls::TlsConnector::builder().build()?);
             Either::Left(cx.connect(host, socket).await?)
