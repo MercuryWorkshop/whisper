@@ -74,7 +74,7 @@ async fn main() -> Result<(), Box<dyn Error + 'static>> {
             .netmask(opts.mask)
             .destination(opts.dest)
             .platform_config(|c| {
-                #[cfg(unix)]
+                #[cfg(target_os = "linux")]
                 c.ensure_root_privileges(true);
                 #[cfg(windows)]
                 c.device_guid(Some(12324323423423434234_u128));
