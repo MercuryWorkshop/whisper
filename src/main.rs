@@ -69,21 +69,21 @@ async fn main() -> Result<(), Box<dyn Error + 'static>> {
     let (mux, socketaddr) = connect_to_wisp(&opts.wisp).await?;
 
     println!("Creating TUN device with name: {:?}", opts.tun);
-    let tun = create_as_async(
-        Configuration::default()
-            .address(opts.ip)
-            .netmask(opts.mask)
-            .destination(opts.dest)
-            .platform_config(|c| {
-                #[cfg(target_os = "linux")]
-                c.ensure_root_privileges(true);
-                #[cfg(windows)]
-                c.device_guid(Some(12324323423423434234_u128));
-            })
-            .mtu(opts.mtu)
-            .tun_name(opts.tun)
-            .up(),
-    )?;
+    let mut cfg = Configuration::default();
+    cfg.address(opts.ip)
+        .netmask(opts.mask)
+        .destination(opts.dest)
+        .mtu(opts.mtu)
+        .tun_name(opts.tun)
+        .up();
+    #[cfg(any(target_os = "linux", windows))]
+    cfg.platform_config(|c| {
+        #[cfg(target_os = "linux")]
+        c.ensure_root_privileges(true);
+        #[cfg(windows)]
+        c.device_guid(Some(12324323423423434234_u128));
+    });
+    let tun = create_as_async(&cfg)?;
 
     if let Some(socketaddr) = socketaddr {
         println!("IP address of Wisp server (whitelist this): {}", socketaddr);
