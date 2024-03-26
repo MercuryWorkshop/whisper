@@ -1,12 +1,10 @@
 use std::{
-    ffi::{c_char, c_int, c_ushort, CStr, CString},
-    net::SocketAddr,
-    ptr,
+    ffi::{c_char, c_int, c_ushort, CStr, CString}, net::SocketAddr, ptr, sync::OnceLock
 };
 
 use hyper::Uri;
 use tokio::{
-    runtime::Runtime,
+    runtime::{Builder, Runtime},
     sync::{
         mpsc::{unbounded_channel, UnboundedSender},
         Mutex,
@@ -35,6 +33,14 @@ struct WhisperRunningState {
 static WHISPER: Mutex<(Option<WhisperInitState>, Option<WhisperRunningState>)> =
     Mutex::const_new((None, None));
 
+static RUNTIME: OnceLock<Runtime> = OnceLock::new();
+
+macro_rules! build_runtime {
+    () => {
+        RUNTIME.get_or_try_init(|| Builder::new_current_thread().enable_all().build())
+    };
+}
+
 #[no_mangle]
 pub extern "C" fn whisper_init(fd: c_int, ws: *const c_char, mtu: c_ushort) -> bool {
     let ws = unsafe {
@@ -43,7 +49,7 @@ pub extern "C" fn whisper_init(fd: c_int, ws: *const c_char, mtu: c_ushort) -> b
         }
         CStr::from_ptr(ws).to_string_lossy().to_string()
     };
-    if let Ok(rt) = Runtime::new() {
+    if let Ok(rt) = build_runtime!() {
         rt.block_on(async {
             let mut whisper = WHISPER.lock().await;
 
@@ -78,13 +84,13 @@ pub extern "C" fn whisper_init(fd: c_int, ws: *const c_char, mtu: c_ushort) -> b
 
 #[no_mangle]
 pub extern "C" fn whisper_get_ws_ip() -> *mut c_char {
-    if let Ok(rt) = Runtime::new() {
+    if let Ok(rt) = build_runtime!() {
         let ip = rt.block_on(async {
             let whisper = WHISPER.lock().await;
             if let Some(init) = &whisper.0 {
-                CString::new(init.socketaddr.to_string()).map_err(WhisperError::other)
+                CString::new(init.socketaddr.ip().to_string()).map_err(WhisperError::other)
             } else if let Some(running) = &whisper.1 {
-                CString::new(running.socketaddr.to_string()).map_err(WhisperError::other)
+                CString::new(running.socketaddr.ip().to_string()).map_err(WhisperError::other)
             } else {
                 Err(WhisperError::NotInitialized)
             }
@@ -110,7 +116,7 @@ pub extern "C" fn whisper_free(s: *mut c_char) {
 
 #[no_mangle]
 pub extern "C" fn whisper_start() -> bool {
-    if let Ok(rt) = Runtime::new() {
+    if let Ok(rt) = build_runtime!() {
         rt.block_on(async {
             let mut whisper = WHISPER.lock().await;
             if whisper.1.is_some() {
@@ -127,6 +133,8 @@ pub extern "C" fn whisper_start() -> bool {
                 channel,
                 socketaddr,
             });
+            // unlock so other stuff can be called
+            drop(whisper);
             start_whisper(mux, tun, mtu, rx)
                 .await
                 .map_err(WhisperError::Other)
@@ -139,7 +147,7 @@ pub extern "C" fn whisper_start() -> bool {
 
 #[no_mangle]
 pub extern "C" fn whisper_stop() -> bool {
-    if let Ok(rt) = Runtime::new() {
+    if let Ok(rt) = build_runtime!() {
         rt.block_on(async {
             let mut whisper = WHISPER.lock().await;
             if whisper.1.is_none() {
