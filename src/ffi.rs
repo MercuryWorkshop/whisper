@@ -1,8 +1,13 @@
 use std::{
-    ffi::{c_char, c_int, c_ushort, CStr, CString}, net::SocketAddr, ptr, sync::OnceLock
+    ffi::{c_char, c_int, c_ushort, CStr, CString},
+    net::SocketAddr,
+    ptr,
+    sync::OnceLock,
 };
 
+use cfg_if::cfg_if;
 use hyper::Uri;
+use log::info;
 use tokio::{
     runtime::{Builder, Runtime},
     sync::{
@@ -11,6 +16,9 @@ use tokio::{
     },
 };
 use tun2::{create_as_async, AsyncDevice, Configuration};
+
+#[cfg(any(target_os = "android", target_os = "ios"))]
+use log::LevelFilter;
 
 use crate::{
     start_whisper,
@@ -39,6 +47,27 @@ macro_rules! build_runtime {
     () => {
         RUNTIME.get_or_try_init(|| Builder::new_current_thread().enable_all().build())
     };
+}
+
+#[no_mangle]
+pub extern "C" fn whisper_init_logging(app_name: *const c_char) -> bool {
+    let app_name = unsafe {
+        if app_name.is_null() {
+            return false;
+        }
+        CStr::from_ptr(app_name).to_string_lossy().to_string()
+    };
+    cfg_if! {
+        if #[cfg(target_os = "ios")] {
+            oslog::OsLogger::new(&app_name)
+                .level_filter(LevelFilter::Trace)
+                .init().is_ok()
+        } else if #[cfg(target_os = "android")] {
+            android_log::init(app_name).is_ok()
+        } else {
+            false
+        }
+    }
 }
 
 #[no_mangle]
@@ -74,6 +103,7 @@ pub extern "C" fn whisper_init(fd: c_int, ws: *const c_char, mtu: c_ushort) -> b
                 mtu,
                 socketaddr: socketaddr.ok_or(WhisperError::NoSocketAddr)?,
             });
+            info!("Initialized Whisper.");
             Ok(())
         })
         .is_ok()
@@ -135,9 +165,12 @@ pub extern "C" fn whisper_start() -> bool {
             });
             // unlock so other stuff can be called
             drop(whisper);
-            start_whisper(mux, tun, mtu, rx)
+            info!("Starting Whisper...");
+            let ret = start_whisper(mux, tun, mtu, rx)
                 .await
-                .map_err(WhisperError::Other)
+                .map_err(WhisperError::Other);
+            info!("Whisper finished with ret: {:?}", ret);
+            ret
         })
         .is_ok()
     } else {
@@ -158,6 +191,7 @@ pub extern "C" fn whisper_stop() -> bool {
             channel
                 .send(WhisperEvent::EndFut)
                 .map_err(WhisperError::other)?;
+            info!("Told Whisper to stop.");
             Ok(())
         })
         .is_ok()

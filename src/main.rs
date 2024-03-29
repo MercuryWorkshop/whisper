@@ -6,6 +6,8 @@ mod util;
 #[cfg(all(feature = "native-tls", feature = "rustls"))]
 compile_error!("native-tls and rustls conflict. enable only one.");
 
+use log::{error, info, LevelFilter};
+use simplelog::{Config, SimpleLogger};
 use util::{connect_to_wisp, WhisperMux};
 
 use std::{error::Error, net::Ipv4Addr, path::PathBuf};
@@ -64,11 +66,12 @@ enum WhisperEvent {
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<(), Box<dyn Error + 'static>> {
+    SimpleLogger::init(LevelFilter::Trace, Config::default())?;
     let opts = Cli::parse();
 
     let (mux, socketaddr) = connect_to_wisp(&opts.wisp).await?;
 
-    println!("Creating TUN device with name: {:?}", opts.tun);
+    info!("Creating TUN device with name: {:?}", opts.tun);
     let mut cfg = Configuration::default();
     cfg.address(opts.ip)
         .netmask(opts.mask)
@@ -86,7 +89,7 @@ async fn main() -> Result<(), Box<dyn Error + 'static>> {
     let tun = create_as_async(&cfg)?;
 
     if let Some(socketaddr) = socketaddr {
-        println!("IP address of Wisp server (whitelist this): {}", socketaddr);
+        info!("IP address of Wisp server (whitelist this): {}", socketaddr);
     }
 
     let (_tx, rx) = unbounded_channel();
@@ -108,7 +111,7 @@ async fn start_whisper(
         let accept = select! {
             x = ip_stack.accept() => x?,
             x = channel.recv() => match x.ok_or(WhisperError::ChannelExited)? {
-                WhisperEvent::EndFut => break Ok(()),
+                WhisperEvent::EndFut => break,
             }
         };
         match accept {
@@ -121,7 +124,7 @@ async fn start_whisper(
                     .into_asyncrw();
                 tokio::spawn(async move {
                     if let Err(err) = copy_bidirectional(&mut tcp, &mut stream).await {
-                        eprintln!("Error while forwarding TCP stream: {:?}", err);
+                        error!("Error while forwarding TCP stream: {:?}", err);
                     }
                 });
             }
@@ -134,11 +137,13 @@ async fn start_whisper(
                     .into_asyncrw();
                 tokio::spawn(async move {
                     if let Err(err) = copy_bidirectional(&mut udp, &mut stream).await {
-                        eprintln!("Error while forwarding UDP datagrams: {:?}", err);
+                        error!("Error while forwarding UDP datagrams: {:?}", err);
                     }
                 });
             }
             _ => {}
         }
     }
+    info!("Broke from whisper loop.");
+    Ok(())
 }

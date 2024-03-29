@@ -11,6 +11,7 @@ use hyper::{
     Request,
 };
 use hyper_util::rt::TokioIo;
+use log::info;
 use tokio::{io::WriteHalf, net::TcpStream};
 #[cfg(feature = "native-tls")]
 use tokio_native_tls::{native_tls, TlsConnector};
@@ -117,7 +118,7 @@ pub async fn connect_to_wisp(
     opts: &WispServer,
 ) -> Result<(WhisperMux, Option<SocketAddr>), Box<dyn Error>> {
     let (rx, tx, socketaddr) = if let Some(pty) = &opts.pty {
-        println!("Connecting to PTY: {:?}", pty);
+        info!("Connecting to PTY: {:?}", pty);
         let (rx, tx) = open_pty(pty).await?;
         (
             EitherWebSocketRead::Right(rx),
@@ -125,7 +126,7 @@ pub async fn connect_to_wisp(
             None,
         )
     } else if let Some(url) = &opts.url {
-        println!("Connecting to WebSocket: {:?}", url);
+        info!("Connecting to WebSocket: {:?}", url);
 
         let tls = match url.scheme_str().ok_or(WhisperError::UriHasNoScheme)? {
             "wss" => Ok(true),
@@ -190,5 +191,6 @@ pub async fn connect_to_wisp(
             abort();
         }
     });
+    info!("Connected.");
     Ok((mux, socketaddr))
 }
