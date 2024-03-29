@@ -31,6 +31,9 @@ wisp-mux = { version = "2.0.1", features = ["tokio_io", "fastwebsockets"] }
 [target.'cfg(target_os = "ios")'.dependencies]
 oslog = "0.2.0"
 
+[target.'cfg(target_os = "android")'.dependencies]
+android_logger = "0.13.3"
+
 [features]
 default = ["native-tls"]
 rustls = ["dep:tokio-rustls", "dep:webpki-roots", "dep:rustls-pki-types"]
