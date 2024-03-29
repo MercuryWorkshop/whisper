@@ -696,7 +696,7 @@ checksum = "8f518f335dce6725a761382244631d86cf0ccb2863413590b31338feb467f9c3"
 [[package]]
 name = "ipstack"
 version = "0.0.6"
-source = "git+https://github.com/r58Playz/ipstack?branch=fix-memory-leak#73e14495868df92bbb2ce02e715b7395d66baa29"
+source = "git+https://github.com/narrowlink/ipstack#2d54e7ed0e7cbd20cda99256b2eff1a278f86759"
 dependencies = [
  "etherparse",
  "log",
