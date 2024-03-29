@@ -1,4 +1,4 @@
-#![feature(once_cell_try)]
+#![feature(once_cell_try, let_chains)]
 mod ffi;
 mod pty;
 mod util;
@@ -10,7 +10,7 @@ use log::{error, info, LevelFilter};
 use simplelog::{Config, SimpleLogger};
 use util::{connect_to_wisp, WhisperMux};
 
-use std::{error::Error, net::Ipv4Addr, path::PathBuf};
+use std::{error::Error, io::ErrorKind, net::Ipv4Addr, path::PathBuf};
 
 use clap::{Args, Parser};
 use hyper::Uri;
@@ -66,7 +66,7 @@ enum WhisperEvent {
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<(), Box<dyn Error + 'static>> {
-    SimpleLogger::init(LevelFilter::Trace, Config::default())?;
+    SimpleLogger::init(LevelFilter::Info, Config::default())?;
     let opts = Cli::parse();
 
     let (mux, socketaddr) = connect_to_wisp(&opts.wisp).await?;
@@ -123,7 +123,10 @@ async fn start_whisper(
                     .into_io()
                     .into_asyncrw();
                 tokio::spawn(async move {
-                    if let Err(err) = copy_bidirectional(&mut tcp, &mut stream).await {
+                    // ignore NotConnected as that usually mean client side properly closed
+                    if let Err(err) = copy_bidirectional(&mut tcp, &mut stream).await
+                        && err.kind() != ErrorKind::NotConnected
+                    {
                         error!("Error while forwarding TCP stream: {:?}", err);
                     }
                 });
@@ -136,7 +139,10 @@ async fn start_whisper(
                     .into_io()
                     .into_asyncrw();
                 tokio::spawn(async move {
-                    if let Err(err) = copy_bidirectional(&mut udp, &mut stream).await {
+                    // ignore TimedOut as that usually mean client side properly closed
+                    if let Err(err) = copy_bidirectional(&mut udp, &mut stream).await
+                        && err.kind() != ErrorKind::TimedOut
+                    {
                         error!("Error while forwarding UDP datagrams: {:?}", err);
                     }
                 });

@@ -8,6 +8,7 @@ use std::{
 use cfg_if::cfg_if;
 use hyper::Uri;
 use log::info;
+use log::LevelFilter;
 use tokio::{
     runtime::{Builder, Runtime},
     sync::{
@@ -16,9 +17,6 @@ use tokio::{
     },
 };
 use tun2::{create_as_async, AsyncDevice, Configuration};
-
-#[cfg(any(target_os = "android", target_os = "ios"))]
-use log::LevelFilter;
 
 use crate::{
     start_whisper,
@@ -51,6 +49,7 @@ macro_rules! build_runtime {
 
 #[no_mangle]
 pub extern "C" fn whisper_init_logging(app_name: *const c_char) -> bool {
+    #[allow(unused_variables)]
     let app_name = unsafe {
         if app_name.is_null() {
             return false;
@@ -60,12 +59,12 @@ pub extern "C" fn whisper_init_logging(app_name: *const c_char) -> bool {
     cfg_if! {
         if #[cfg(target_os = "ios")] {
             oslog::OsLogger::new(&app_name)
-                .level_filter(LevelFilter::Trace)
+                .level_filter(LevelFilter::Info)
                 .init().is_ok()
         } else if #[cfg(target_os = "android")] {
             android_log::init(app_name).is_ok()
         } else {
-            false
+            simplelog::SimpleLogger::init(LevelFilter::Info, simplelog::Config::default()).is_ok()
         }
     }
 }
