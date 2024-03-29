@@ -15,7 +15,7 @@ futures-util = { version = "0.3.30", features = ["sink"] }
 http-body-util = "0.1.1"
 hyper = { version = "1.2.0", features = ["client", "http1"] }
 hyper-util = { version = "0.1.3", features = ["tokio"] }
-ipstack = "0.0.5"
+ipstack = { git = "https://github.com/r58Playz/ipstack", branch = "fix-memory-leak" }
 rustls-pki-types = { version = "1.4.0", optional = true }
 tokio = { version = "1.36.0", features = ["full"] }
 tokio-native-tls = { version = "0.3.1", optional = true }
