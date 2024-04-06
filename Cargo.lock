@@ -27,25 +27,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "android_liblog-sys"
-version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aaf82c031178ca72b38595a54d16df8a257df9deea7d97a8992870e5c6a738e7"
-dependencies = [
- "libc",
-]
-
-[[package]]
-name = "android_log"
-version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc00e0d3a060cce3fa338f9644ce9a93901c79f5405330891aeca69c9957009a"
-dependencies = [
- "android_liblog-sys",
- "log 0.3.9",
-]
-
-[[package]]
 name = "anstream"
 version = "0.6.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -175,7 +156,7 @@ dependencies = [
  "itertools",
  "lazy_static",
  "lazycell",
- "log 0.4.21",
+ "log",
  "prettyplease",
  "proc-macro2",
  "quote",
@@ -742,11 +723,12 @@ checksum = "8f518f335dce6725a761382244631d86cf0ccb2863413590b31338feb467f9c3"
 
 [[package]]
 name = "ipstack"
-version = "0.0.6"
-source = "git+https://github.com/narrowlink/ipstack#2d54e7ed0e7cbd20cda99256b2eff1a278f86759"
+version = "0.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "baa88fc9ee4f1668c50d27e273f0b7f462b8ceea1a0dfc5ac4e1b991b4ba749e"
 dependencies = [
  "etherparse",
- "log 0.4.21",
+ "log",
  "rand",
  "thiserror",
  "tokio",
@@ -813,15 +795,6 @@ dependencies = [
 
 [[package]]
 name = "log"
-version = "0.3.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e19e8d5c34a3e0e2223db8e060f9e8264aeeb5c5fc64a4ee9965c062211c024b"
-dependencies = [
- "log 0.4.21",
-]
-
-[[package]]
-name = "log"
 version = "0.4.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "90ed8c1e510134f979dbc4f070f87d4313098b704861a105fe34231c70a3901c"
@@ -872,7 +845,7 @@ checksum = "07226173c32f2926027b63cce4bcd8076c3552846cbe7925f3aaffeac0a3b92e"
 dependencies = [
  "lazy_static",
  "libc",
- "log 0.4.21",
+ "log",
  "openssl",
  "openssl-probe",
  "openssl-sys",
@@ -996,7 +969,7 @@ checksum = "80d2043d1f61d77cb2f4b1f7b7b2295f40507f5f8e9d1c8bf10a1ca5f97a3969"
 dependencies = [
  "cc",
  "dashmap",
- "log 0.4.21",
+ "log",
 ]
 
 [[package]]
@@ -1236,7 +1209,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8c4d6d8ad9f2492485e13453acbb291dd08f64441b6609c491f1c2cd2c6b4fe1"
 dependencies = [
  "aws-lc-rs",
- "log 0.4.21",
+ "log",
  "once_cell",
  "rustls-pki-types",
  "rustls-webpki",
@@ -1364,7 +1337,7 @@ version = "0.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "16257adbfaef1ee58b1363bdc0664c9b8e1e30aed86049635fb5f147d065a9c0"
 dependencies = [
- "log 0.4.21",
+ "log",
  "termcolor",
  "time",
 ]
@@ -1510,9 +1483,9 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "1.36.0"
+version = "1.37.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61285f6515fa018fb2d1e46eb21223fff441ee8db5d0f1435e8ab4f5cdb80931"
+checksum = "1adbebffeca75fcfd058afa480fb6c0b81e165a0323f9c9d39c9697e37c46787"
 dependencies = [
  "backtrace",
  "bytes",
@@ -1609,7 +1582,7 @@ dependencies = [
  "futures-core",
  "ipnet",
  "libc",
- "log 0.4.21",
+ "log",
  "nix",
  "thiserror",
  "tokio",
@@ -1699,7 +1672,6 @@ dependencies = [
 name = "whisper"
 version = "0.1.0"
 dependencies = [
- "android_log",
  "bytes",
  "cfg-if",
  "clap",
@@ -1709,7 +1681,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "ipstack",
- "log 0.4.21",
+ "log",
  "oslog",
  "rustls-pki-types",
  "simplelog",
@@ -1912,7 +1884,7 @@ checksum = "1b3c8c8876c686f8a2d6376999ac1c9a24c74d2968551c9394f7e89127783685"
 dependencies = [
  "c2rust-bitfields",
  "libloading",
- "log 0.4.21",
+ "log",
  "thiserror",
  "windows",
 ]

@@ -1,26 +1,21 @@
 #![feature(once_cell_try, let_chains)]
 mod ffi;
 mod pty;
-mod util;
+pub mod util;
 
 #[cfg(all(feature = "native-tls", feature = "rustls"))]
 compile_error!("native-tls and rustls conflict. enable only one.");
 
-use log::{error, info, LevelFilter};
-use simplelog::{Config, SimpleLogger};
-use util::{connect_to_wisp, WhisperMux};
+use log::{error, info};
+use util::WhisperMux;
 
 use std::{error::Error, io::ErrorKind, net::Ipv4Addr, path::PathBuf};
 
 use clap::{Args, Parser};
 use hyper::Uri;
 use ipstack::{IpStack, IpStackConfig};
-use tokio::{
-    io::copy_bidirectional,
-    select,
-    sync::mpsc::{unbounded_channel, UnboundedReceiver},
-};
-use tun2::{create_as_async, AsyncDevice, Configuration};
+use tokio::{io::copy_bidirectional, select, sync::mpsc::UnboundedReceiver};
+use tun2::AsyncDevice;
 use wisp_mux::StreamType;
 
 use crate::util::WhisperError;
@@ -28,29 +23,29 @@ use crate::util::WhisperError;
 /// Wisp client that exposes the Wisp connection over a TUN device.
 #[derive(Debug, Parser)]
 #[command(version = clap::crate_version!())]
-struct Cli {
+pub struct Cli {
     #[clap(flatten)]
-    wisp: WispServer,
+    pub wisp: WispServer,
     /// Name of created TUN device
     #[arg(short, long)]
-    tun: String,
+    pub tun: String,
     /// MTU of created TUN device
     #[arg(short, long, default_value_t = u16::MAX)]
-    mtu: u16,
+    pub mtu: u16,
     /// IP address of created TUN device
     #[arg(short, long, default_value = "10.0.10.2")]
-    ip: Ipv4Addr,
+    pub ip: Ipv4Addr,
     // Mask of created TUN device (defaults to /0)
     #[arg(short = 'M', long, default_value = "0.0.0.0")]
-    mask: Ipv4Addr,
+    pub mask: Ipv4Addr,
     // Destination of created TUN device (defaults to 0.0.0.0)
     #[arg(short, long, default_value = "0.0.0.0")]
-    dest: Ipv4Addr,
+    pub dest: Ipv4Addr,
 }
 
 #[derive(Debug, Args)]
 #[group(required = true, multiple = false)]
-struct WispServer {
+pub struct WispServer {
     /// Path to PTY device
     #[arg(short, long)]
     pty: Option<PathBuf>,
@@ -60,43 +55,11 @@ struct WispServer {
 }
 
 #[derive(Debug, Clone, Copy)]
-enum WhisperEvent {
+pub enum WhisperEvent {
     EndFut,
 }
 
-#[tokio::main(flavor = "multi_thread")]
-async fn main() -> Result<(), Box<dyn Error + 'static>> {
-    SimpleLogger::init(LevelFilter::Info, Config::default())?;
-    let opts = Cli::parse();
-
-    let (mux, socketaddr) = connect_to_wisp(&opts.wisp).await?;
-
-    info!("Creating TUN device with name: {:?}", opts.tun);
-    let mut cfg = Configuration::default();
-    cfg.address(opts.ip)
-        .netmask(opts.mask)
-        .destination(opts.dest)
-        .mtu(opts.mtu)
-        .tun_name(opts.tun)
-        .up();
-    #[cfg(any(target_os = "linux", windows))]
-    cfg.platform_config(|c| {
-        #[cfg(target_os = "linux")]
-        c.ensure_root_privileges(true);
-        #[cfg(windows)]
-        c.device_guid(Some(12324323423423434234_u128));
-    });
-    let tun = create_as_async(&cfg)?;
-
-    if let Some(socketaddr) = socketaddr {
-        info!("IP address of Wisp server (whitelist this): {}", socketaddr);
-    }
-
-    let (_tx, rx) = unbounded_channel();
-    start_whisper(mux, tun, opts.mtu, rx).await
-}
-
-async fn start_whisper(
+pub async fn start_whisper(
     mux: WhisperMux,
     tun: AsyncDevice,
     mtu: u16,
