@@ -6,7 +6,7 @@ use futures_util::{
     SinkExt, StreamExt,
 };
 use tokio::fs::File;
-use tokio_util::codec::{BytesCodec, Framed};
+use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use wisp_mux::{
     ws::{Frame, LockedWebSocketWrite, WebSocketRead, WebSocketWrite},
     WispError,
@@ -14,12 +14,12 @@ use wisp_mux::{
 
 pub async fn open_pty(file: &PathBuf) -> Result<(PtyRead, PtyWrite), io::Error> {
     let pty = File::options().read(true).write(true).open(file).await?;
-    let pty = Framed::new(pty, BytesCodec::new());
+    let pty = LengthDelimitedCodec::builder().little_endian().new_framed(pty);
     let (tx, rx) = pty.split();
     Ok((PtyRead(rx), PtyWrite(tx)))
 }
 
-pub struct PtyRead(SplitStream<Framed<File, BytesCodec>>);
+pub struct PtyRead(SplitStream<Framed<File, LengthDelimitedCodec>>);
 
 impl WebSocketRead for PtyRead {
     async fn wisp_read_frame(
@@ -37,7 +37,7 @@ impl WebSocketRead for PtyRead {
     }
 }
 
-pub struct PtyWrite(SplitSink<Framed<File, BytesCodec>, Bytes>);
+pub struct PtyWrite(SplitSink<Framed<File, LengthDelimitedCodec>, Bytes>);
 
 impl WebSocketWrite for PtyWrite {
     async fn wisp_write_frame(&mut self, frame: Frame) -> Result<(), wisp_mux::WispError> {
