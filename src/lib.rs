@@ -69,6 +69,8 @@ pub async fn start_whisper(
     ip_stack_config.mtu(mtu);
     let mut ip_stack = IpStack::new(ip_stack_config, tun);
 
+    info!("Whisper ready!");
+
     loop {
         use ipstack::stream::IpStackStream as S;
         let accept = select! {
