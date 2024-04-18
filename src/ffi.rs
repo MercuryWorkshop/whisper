@@ -43,7 +43,7 @@ static RUNTIME: OnceLock<Runtime> = OnceLock::new();
 
 macro_rules! build_runtime {
     () => {
-        RUNTIME.get_or_try_init(|| Builder::new_current_thread().enable_all().build())
+        RUNTIME.get_or_init(|| Builder::new_current_thread().enable_all().build().unwrap())
     };
 }
 
@@ -77,7 +77,7 @@ pub extern "C" fn whisper_init(fd: c_int, ws: *const c_char, mtu: c_ushort) -> b
         }
         CStr::from_ptr(ws).to_string_lossy().to_string()
     };
-    if let Ok(rt) = build_runtime!() {
+    if let rt = build_runtime!() {
         rt.block_on(async {
             let mut whisper = WHISPER.lock().await;
 
@@ -113,7 +113,7 @@ pub extern "C" fn whisper_init(fd: c_int, ws: *const c_char, mtu: c_ushort) -> b
 
 #[no_mangle]
 pub extern "C" fn whisper_get_ws_ip() -> *mut c_char {
-    if let Ok(rt) = build_runtime!() {
+    if let rt = build_runtime!() {
         let ip = rt.block_on(async {
             let whisper = WHISPER.lock().await;
             if let Some(init) = &whisper.0 {
@@ -145,7 +145,7 @@ pub extern "C" fn whisper_free(s: *mut c_char) {
 
 #[no_mangle]
 pub extern "C" fn whisper_start() -> bool {
-    if let Ok(rt) = build_runtime!() {
+    if let rt = build_runtime!() {
         rt.block_on(async {
             let mut whisper = WHISPER.lock().await;
             if whisper.1.is_some() {
@@ -179,7 +179,7 @@ pub extern "C" fn whisper_start() -> bool {
 
 #[no_mangle]
 pub extern "C" fn whisper_stop() -> bool {
-    if let Ok(rt) = build_runtime!() {
+    if let rt = build_runtime!() {
         rt.block_on(async {
             let mut whisper = WHISPER.lock().await;
             if whisper.1.is_none() {

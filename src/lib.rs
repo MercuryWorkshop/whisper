@@ -1,4 +1,3 @@
-#![feature(once_cell_try, let_chains)]
 mod ffi;
 mod pty;
 pub mod util;
@@ -90,10 +89,10 @@ pub async fn start_whisper(
                 tokio::spawn(async move {
                     // ignore NotConnected as that usually mean client side properly closed
                     if let Err(err) = copy_bidirectional(&mut tcp, &mut stream).await
-                        && err.kind() != ErrorKind::NotConnected
+                       { if err.kind() != ErrorKind::NotConnected
                     {
                         error!("Error while forwarding TCP stream: {:?}", err);
-                    }
+                    }}
                 });
             }
             S::Udp(mut udp) => {
@@ -105,10 +104,10 @@ pub async fn start_whisper(
                     .into_asyncrw();
                 tokio::spawn(async move {
                     // ignore TimedOut as that usually mean client side properly closed
-                    if let Err(err) = copy_bidirectional(&mut udp, &mut stream).await
-                        && err.kind() != ErrorKind::TimedOut
-                    {
-                        error!("Error while forwarding UDP datagrams: {:?}", err);
+                    if let Err(err) = copy_bidirectional(&mut udp, &mut stream).await {
+                        if err.kind() != ErrorKind::TimedOut {
+                            error!("Error while forwarding UDP datagrams: {:?}", err);
+                        }
                     }
                 });
             }
