@@ -41,6 +41,9 @@ pub struct Cli {
     // Destination of created TUN device (defaults to 0.0.0.0)
     #[arg(short, long, default_value = "0.0.0.0")]
     pub dest: Ipv4Addr,
+    // Use cloudflared access. URL must be specified. You must be logged into cloudflared.
+    #[arg(short, long)]
+    pub cf: bool,
 }
 
 #[derive(Debug, Args)]
@@ -48,10 +51,10 @@ pub struct Cli {
 pub struct WispServer {
     /// Path to PTY device
     #[arg(short, long)]
-    pty: Option<PathBuf>,
+    pub pty: Option<PathBuf>,
     /// Wisp server URL
     #[arg(short, long)]
-    url: Option<Uri>,
+    pub url: Option<Uri>,
 }
 
 #[derive(Debug, Clone, Copy)]
