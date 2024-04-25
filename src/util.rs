@@ -118,8 +118,8 @@ pub async fn connect_to_wisp(
     opts: &WispServer,
 ) -> Result<(WhisperMux, Option<SocketAddr>), Box<dyn Error>> {
     let (rx, tx, socketaddr) = if let Some(pty) = &opts.pty {
-        info!("Connecting to PTY: {:?}", pty);
-        let (rx, tx) = open_pty(pty).await?;
+        info!("Connecting to PTY [rx, tx]: {:?}", pty);
+        let (rx, tx) = open_pty(&pty[0], &pty[1]).await?;
         (
             EitherWebSocketRead::Right(rx),
             EitherWebSocketWrite::Right(tx),

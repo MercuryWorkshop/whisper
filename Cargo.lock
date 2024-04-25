@@ -1711,6 +1711,7 @@ dependencies = [
  "hyper-util",
  "ipstack",
  "log",
+ "nix",
  "oslog",
  "rustls-pki-types",
  "simplelog",
