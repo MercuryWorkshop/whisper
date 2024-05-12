@@ -1,4 +1,4 @@
-use std::{io, path::PathBuf};
+use std::{io, os::fd::AsFd, path::PathBuf};
 
 use bytes::Bytes;
 use futures_util::{
@@ -14,7 +14,13 @@ use wisp_mux::{
 
 pub async fn open_pty(file: &PathBuf) -> Result<(PtyRead, PtyWrite), io::Error> {
     let pty = File::options().read(true).write(true).open(file).await?;
-    let pty = LengthDelimitedCodec::builder().little_endian().new_framed(pty);
+    let mut termios = nix::sys::termios::tcgetattr(pty.as_fd())?.clone();
+    nix::sys::termios::cfmakeraw(&mut termios);
+    nix::sys::termios::tcsetattr(pty.as_fd(), nix::sys::termios::SetArg::TCSANOW, &termios)?;
+    let pty = LengthDelimitedCodec::builder()
+        .little_endian()
+        .max_frame_length(usize::MAX)
+        .new_framed(pty);
     let (tx, rx) = pty.split();
     Ok((PtyRead(rx), PtyWrite(tx)))
 }
