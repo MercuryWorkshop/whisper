@@ -154,7 +154,7 @@ pub extern "C" fn whisper_start() -> bool {
             let WhisperInitState {
                 mux,
                 tun,
-                mtu,
+                mtu: _,
                 socketaddr,
             } = whisper.0.take().ok_or(WhisperError::NotInitialized)?;
             let (channel, rx) = unbounded_channel();
@@ -165,7 +165,7 @@ pub extern "C" fn whisper_start() -> bool {
             // unlock so other stuff can be called
             drop(whisper);
             info!("Starting Whisper...");
-            let ret = start_whisper(mux, tun, mtu, rx)
+            let ret = start_whisper(mux, tun, rx)
                 .await
                 .map_err(WhisperError::Other);
             info!("Whisper finished with ret: {:?}", ret);

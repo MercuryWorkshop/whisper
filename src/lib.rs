@@ -6,19 +6,18 @@ pub mod util;
 #[cfg(all(feature = "native-tls", feature = "rustls"))]
 compile_error!("native-tls and rustls conflict. enable only one.");
 
-use log::{error, info};
+use futures_util::{future::select_all, Future, SinkExt, StreamExt};
+use log::info;
+use lwip::NetStack;
 use util::WhisperMux;
 
-use std::{error::Error, io::ErrorKind, net::Ipv4Addr, path::PathBuf};
+use std::{error::Error, net::Ipv4Addr, path::PathBuf, pin::Pin, sync::Arc};
 
 use clap::{Args, Parser};
 use hyper::Uri;
-use ipstack::{IpStack, IpStackConfig};
-use tokio::{io::copy_bidirectional, select, sync::mpsc::UnboundedReceiver};
+use tokio::{io::copy_bidirectional, sync::mpsc::UnboundedReceiver, task::JoinError};
 use tun2::AsyncDevice;
 use wisp_mux::StreamType;
-
-use crate::util::WhisperError;
 
 /// Wisp client that exposes the Wisp connection over a TUN device.
 #[derive(Debug, Parser)]
@@ -65,59 +64,65 @@ pub enum WhisperEvent {
 pub async fn start_whisper(
     mux: WhisperMux,
     tun: AsyncDevice,
-    mtu: u16,
     mut channel: UnboundedReceiver<WhisperEvent>,
 ) -> Result<(), Box<dyn Error>> {
-    let mut ip_stack_config = IpStackConfig::default();
-    ip_stack_config.mtu(mtu);
-    let mut ip_stack = IpStack::new(ip_stack_config, tun);
+    let (stack, mut tcp_listener, mut _udp_socket) = NetStack::new()?;
+    let (mut tun_tx, mut tun_rx) = tun.into_framed().split();
+    let (mut stack_tx, mut stack_rx) = stack.split();
+
+    let mux = Arc::new(mux);
+
+    let read_handle: Pin<Box<dyn Future<Output = Result<(), JoinError>>>> =
+        Box::pin(tokio::spawn(async move {
+            while let Some(pkt) = stack_rx.next().await {
+                if let Ok(pkt) = pkt {
+                    tun_tx.send(pkt).await.unwrap();
+                }
+            }
+        }));
+
+    let write_handle: Pin<Box<dyn Future<Output = Result<(), JoinError>>>> =
+        Box::pin(tokio::spawn(async move {
+            while let Some(pkt) = tun_rx.next().await {
+                if let Ok(pkt) = pkt {
+                    stack_tx.send(pkt).await.unwrap();
+                }
+            }
+        }));
 
     info!("Whisper ready!");
 
-    loop {
-        use ipstack::stream::IpStackStream as S;
-        let accept = select! {
-            x = ip_stack.accept() => x?,
-            x = channel.recv() => match x.ok_or(WhisperError::ChannelExited)? {
-                WhisperEvent::EndFut => break,
-            }
-        };
-        match accept {
-            S::Tcp(mut tcp) => {
-                let addr = tcp.peer_addr();
-                let mut stream = mux
-                    .client_new_stream(StreamType::Tcp, addr.ip().to_string(), addr.port())
-                    .await?
-                    .into_io()
-                    .into_asyncrw();
+    let tcp_mux = mux.clone();
+    let tcp_handle: Pin<Box<dyn Future<Output = Result<(), JoinError>>>> =
+        Box::pin(tokio::spawn(async move {
+            while let Some((mut stream, _local_addr, remote_addr)) = tcp_listener.next().await {
+                let stream_mux = tcp_mux.clone();
                 tokio::spawn(async move {
-                    // ignore NotConnected as that usually mean client side properly closed
-                    if let Err(err) = copy_bidirectional(&mut tcp, &mut stream).await
-                        && err.kind() != ErrorKind::NotConnected
-                    {
-                        error!("Error while forwarding TCP stream: {:?}", err);
-                    }
+                    let mut wisp_stream = stream_mux
+                        .client_new_stream(
+                            StreamType::Tcp,
+                            remote_addr.ip().to_string(),
+                            remote_addr.port(),
+                        )
+                        .await
+                        .unwrap()
+                        .into_io()
+                        .into_asyncrw();
+                    copy_bidirectional(&mut stream, &mut wisp_stream)
+                        .await
+                        .unwrap();
                 });
             }
-            S::Udp(mut udp) => {
-                let addr = udp.peer_addr();
-                let mut stream = mux
-                    .client_new_stream(StreamType::Udp, addr.ip().to_string(), addr.port())
-                    .await?
-                    .into_io()
-                    .into_asyncrw();
-                tokio::spawn(async move {
-                    // ignore TimedOut as that usually mean client side properly closed
-                    if let Err(err) = copy_bidirectional(&mut udp, &mut stream).await
-                        && err.kind() != ErrorKind::TimedOut
-                    {
-                        error!("Error while forwarding UDP datagrams: {:?}", err);
-                    }
-                });
-            }
-            _ => {}
-        }
-    }
+        }));
+
+    let channel_handle: Pin<Box<dyn Future<Output = Result<(), JoinError>>>> =
+        Box::pin(tokio::spawn(async move {
+            channel.recv().await;
+        }));
+
     info!("Broke from whisper loop.");
+    select_all(&mut [read_handle, write_handle, tcp_handle, channel_handle])
+        .await
+        .0?;
     Ok(())
 }

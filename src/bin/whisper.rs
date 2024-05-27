@@ -87,5 +87,5 @@ async fn main() -> Result<(), Box<dyn Error + 'static>> {
     }
 
     let (_tx, rx) = unbounded_channel();
-    start_whisper(mux, tun, opts.mtu, rx).await
+    start_whisper(mux, tun, rx).await
 }
