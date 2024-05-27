@@ -47,7 +47,8 @@ async fn main() -> Result<(), Box<dyn Error + 'static>> {
         let host = url.host().ok_or(WhisperError::UriHasNoHost)?;
         let port = url.port_u16().unwrap_or(if tls { 443 } else { 80 });
 
-        let socketaddr = lookup_host(format!("{}:{}", host, port)).await?.next();
+        let socketaddr = lookup_host(format!("{}:{}", host, port)).await?;
+        info!("IP addresses of Wisp server (whitelist these): {:?}", socketaddr.collect::<Vec<_>>());
         let mut local_url = Uri::builder().scheme("ws").authority(free_port.to_string());
         if let Some(path_and_query) = url.path_and_query() {
             local_url = local_url.path_and_query(path_and_query.clone());
@@ -59,7 +60,7 @@ async fn main() -> Result<(), Box<dyn Error + 'static>> {
             })
             .await?
             .0,
-            socketaddr,
+            None,
         )
     } else {
         connect_to_wisp(&opts.wisp).await?
