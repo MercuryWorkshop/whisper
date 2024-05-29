@@ -17,15 +17,16 @@ use tokio::{
     },
 };
 use tun2::{create_as_async, AsyncDevice, Configuration};
+use wisp_mux::ClientMux;
 
 use crate::{
     start_whisper,
-    util::{connect_to_wisp, WhisperError, WhisperMux},
+    util::{connect_to_wisp, WhisperError},
     WhisperEvent, WispServer,
 };
 
 struct WhisperInitState {
-    mux: WhisperMux,
+    mux: ClientMux,
     tun: AsyncDevice,
     mtu: u16,
     socketaddr: SocketAddr,
@@ -154,7 +155,7 @@ pub extern "C" fn whisper_start() -> bool {
             let WhisperInitState {
                 mux,
                 tun,
-                mtu: _,
+                mtu,
                 socketaddr,
             } = whisper.0.take().ok_or(WhisperError::NotInitialized)?;
             let (channel, rx) = unbounded_channel();
@@ -165,7 +166,7 @@ pub extern "C" fn whisper_start() -> bool {
             // unlock so other stuff can be called
             drop(whisper);
             info!("Starting Whisper...");
-            let ret = start_whisper(mux, tun, rx)
+            let ret = start_whisper(mux, tun, mtu, rx)
                 .await
                 .map_err(WhisperError::Other);
             info!("Whisper finished with ret: {:?}", ret);

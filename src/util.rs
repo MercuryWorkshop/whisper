@@ -1,5 +1,6 @@
 use std::{error::Error, fmt::Display, net::SocketAddr, process::abort};
 
+use async_trait::async_trait;
 use bytes::Bytes;
 use fastwebsockets::{handshake, FragmentCollectorRead};
 use futures_util::Future;
@@ -7,26 +8,25 @@ use http_body_util::Empty;
 use hyper::{
     header::{CONNECTION, UPGRADE},
     rt::Executor,
-    upgrade::Upgraded,
     Request,
 };
-use hyper_util::rt::TokioIo;
 use log::info;
-use tokio::{io::WriteHalf, net::TcpStream};
+use tokio::net::TcpStream;
 #[cfg(feature = "native-tls")]
 use tokio_native_tls::{native_tls, TlsConnector};
 #[cfg(feature = "rustls")]
-use tokio_rustls::{rustls::{ClientConfig, RootCertStore}, TlsConnector};
+use tokio_rustls::{
+    rustls::{ClientConfig, RootCertStore},
+    TlsConnector,
+};
 use tokio_util::either::Either;
 use wisp_mux::{
-    ws::{Frame, WebSocketRead, WebSocketWrite},
-    ClientMux,
+    extensions::udp::UdpProtocolExtensionBuilder,
+    ws::{Frame, LockedWebSocketWrite, WebSocketRead, WebSocketWrite},
+    ClientMux, WispError,
 };
 
-use crate::{
-    pty::{open_pty, PtyWrite},
-    WispServer,
-};
+use crate::{pty::open_pty, WispServer};
 
 pub struct SpawnExecutor;
 
@@ -84,11 +84,9 @@ pub enum EitherWebSocketRead<L: WebSocketRead, R: WebSocketRead> {
     Right(R),
 }
 
-impl<L: WebSocketRead, R: WebSocketRead> WebSocketRead for EitherWebSocketRead<L, R> {
-    async fn wisp_read_frame(
-        &mut self,
-        tx: &wisp_mux::ws::LockedWebSocketWrite<impl wisp_mux::ws::WebSocketWrite>,
-    ) -> Result<Frame, wisp_mux::WispError> {
+#[async_trait]
+impl<L: WebSocketRead + Send, R: WebSocketRead + Send> WebSocketRead for EitherWebSocketRead<L, R> {
+    async fn wisp_read_frame(&mut self, tx: &LockedWebSocketWrite) -> Result<Frame, WispError> {
         match self {
             Self::Left(read) => read.wisp_read_frame(tx).await,
             Self::Right(read) => read.wisp_read_frame(tx).await,
@@ -101,22 +99,28 @@ pub enum EitherWebSocketWrite<L: WebSocketWrite, R: WebSocketWrite> {
     Right(R),
 }
 
-impl<L: WebSocketWrite, R: WebSocketWrite> WebSocketWrite for EitherWebSocketWrite<L, R> {
-    async fn wisp_write_frame(&mut self, frame: Frame) -> Result<(), wisp_mux::WispError> {
+#[async_trait]
+impl<L: WebSocketWrite + Send, R: WebSocketWrite + Send> WebSocketWrite
+    for EitherWebSocketWrite<L, R>
+{
+    async fn wisp_write_frame(&mut self, frame: Frame) -> Result<(), WispError> {
         match self {
             Self::Left(write) => write.wisp_write_frame(frame).await,
             Self::Right(write) => write.wisp_write_frame(frame).await,
         }
     }
-}
 
-pub type WhisperMux = ClientMux<
-    EitherWebSocketWrite<fastwebsockets::WebSocketWrite<WriteHalf<TokioIo<Upgraded>>>, PtyWrite>,
->;
+    async fn wisp_close(&mut self) -> Result<(), WispError> {
+        match self {
+            Self::Left(write) => write.wisp_close().await,
+            Self::Right(write) => write.wisp_close().await,
+        }
+    }
+}
 
 pub async fn connect_to_wisp(
     opts: &WispServer,
-) -> Result<(WhisperMux, Option<SocketAddr>), Box<dyn Error>> {
+) -> Result<(ClientMux, Option<SocketAddr>), Box<dyn Error>> {
     let (rx, tx, socketaddr) = if let Some(pty) = &opts.pty {
         info!("Connecting to PTY: {:?}", pty);
         let (rx, tx) = open_pty(pty).await?;
@@ -183,7 +187,10 @@ pub async fn connect_to_wisp(
         unreachable!("neither pty nor url specified");
     };
 
-    let (mux, fut) = ClientMux::new(rx, tx).await?;
+    let (mux, fut) = ClientMux::create(rx, tx, Some(&[Box::new(UdpProtocolExtensionBuilder())]))
+        .await?
+        .with_udp_extension_required()
+        .await?;
 
     tokio::spawn(async move {
         if let Err(err) = fut.await {
@@ -191,6 +198,7 @@ pub async fn connect_to_wisp(
             abort();
         }
     });
+
     info!("Connected.");
     Ok((mux, socketaddr))
 }

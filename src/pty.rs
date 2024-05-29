@@ -1,5 +1,6 @@
 use std::{io, os::fd::AsFd, path::PathBuf};
 
+use async_trait::async_trait;
 use futures_util::{SinkExt, StreamExt};
 use tokio::fs::File;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
@@ -31,31 +32,29 @@ pub async fn open_pty(file: &PathBuf) -> Result<(PtyRead, PtyWrite), io::Error> 
 
 pub struct PtyRead(Framed<File, LengthDelimitedCodec>);
 
+#[async_trait]
 impl WebSocketRead for PtyRead {
-    async fn wisp_read_frame(
-        &mut self,
-        _: &LockedWebSocketWrite<impl WebSocketWrite>,
-    ) -> Result<Frame, WispError> {
+    async fn wisp_read_frame(&mut self, _: &LockedWebSocketWrite) -> Result<Frame, WispError> {
         Ok(Frame::binary(
             self.0
                 .next()
                 .await
                 .ok_or(WispError::WsImplSocketClosed)?
-                .map_err(|x| WispError::WsImplError(Box::new(x)))?
-                .into(),
+                .map_err(|x| WispError::WsImplError(Box::new(x)))?,
         ))
     }
 }
 
 pub struct PtyWrite(Framed<File, LengthDelimitedCodec>);
 
+#[async_trait]
 impl WebSocketWrite for PtyWrite {
-    async fn wisp_write_frame(&mut self, frame: Frame) -> Result<(), wisp_mux::WispError> {
+    async fn wisp_write_frame(&mut self, frame: Frame) -> Result<(), WispError> {
         use wisp_mux::ws::OpCode as O;
         match frame.opcode {
             O::Text | O::Binary => self
                 .0
-                .send(frame.payload)
+                .send(frame.payload.into())
                 .await
                 .map_err(|x| WispError::WsImplError(Box::new(x))),
             O::Close => self
@@ -64,10 +63,17 @@ impl WebSocketWrite for PtyWrite {
                 .await
                 .map_err(|x| WispError::WsImplError(Box::new(x))),
             _ => Err(WispError::WsImplNotSupported),
-        }?;
+        }
+    }
+
+    async fn wisp_close(&mut self) -> Result<(), WispError> {
         self.0
             .get_mut()
-            .sync_data()
+            .sync_all()
+            .await
+            .map_err(|x| WispError::WsImplError(Box::new(x)))?;
+        self.0
+            .close()
             .await
             .map_err(|x| WispError::WsImplError(Box::new(x)))?;
         Ok(())

@@ -6,15 +6,14 @@ pub mod util;
 #[cfg(all(feature = "native-tls", feature = "rustls"))]
 compile_error!("native-tls and rustls conflict. enable only one.");
 
+use dashmap::DashMap;
 use futures_util::{
     future::select_all, stream::SplitSink, Future, Sink, SinkExt, Stream, StreamExt,
 };
 use log::{error, info};
 use lwip::NetStack;
-use util::WhisperMux;
 
 use std::{
-    collections::HashMap,
     error::Error,
     net::{Ipv4Addr, SocketAddr},
     path::PathBuf,
@@ -33,7 +32,7 @@ use tokio::{
     time::{Instant, Sleep},
 };
 use tun2::AsyncDevice;
-use wisp_mux::{MuxStreamIo, StreamType};
+use wisp_mux::{ClientMux, MuxStreamIo, StreamType};
 
 /// Wisp client that exposes the Wisp connection over a TUN device.
 #[derive(Debug, Parser)]
@@ -145,11 +144,12 @@ impl<I, S: Sink<I, Error = std::io::Error>> Sink<I> for TimeoutStreamSink<S> {
 type TimeoutMuxStreamSink = SplitSink<TimeoutStreamSink<MuxStreamIo>, Vec<u8>>;
 
 pub async fn start_whisper(
-    mux: WhisperMux,
+    mux: ClientMux,
     tun: AsyncDevice,
+    mtu: u16,
     mut channel: UnboundedReceiver<WhisperEvent>,
 ) -> Result<(), Box<dyn Error>> {
-    let (stack, mut tcp_listener, udp_socket) = NetStack::new()?;
+    let (stack, mut tcp_listener, udp_socket) = NetStack::with_buffer_size(mtu.into(), 64)?;
     let (mut tun_tx, mut tun_rx) = tun.into_framed().split();
     let (mut stack_tx, mut stack_rx) = stack.split();
     let (udp_write, mut udp_read) = udp_socket.split();
@@ -200,13 +200,14 @@ pub async fn start_whisper(
     let udp_mux = mux.clone();
     let udp_handle: Pin<Box<dyn Future<Output = Result<(), JoinError>>>> =
         Box::pin(tokio::spawn(async move {
-            let mut udp_map: HashMap<(SocketAddr, SocketAddr), TimeoutMuxStreamSink> =
-                HashMap::new();
+            let udp_map: Arc<DashMap<(SocketAddr, SocketAddr), TimeoutMuxStreamSink>> =
+                Arc::new(DashMap::new());
 
             while let Some((pkt, src, dest)) = udp_read.next().await {
-                if let Some(stream) = udp_map.get_mut(&(src, dest)) {
+                if let Some(mut stream) = udp_map.get_mut(&(src, dest)) {
                     if let Err(err) = stream.send(pkt).await {
                         error!("error while sending udp packet to {}: {:?}", dest, err);
+                        drop(stream);
                         udp_map.remove(&(src, dest));
                     }
                 } else if let Ok(wisp_stream) = udp_mux
@@ -221,11 +222,13 @@ pub async fn start_whisper(
                         TimeoutStreamSink::new(wisp_stream.into_io()).split();
                     udp_map.insert((src, dest), wisp_w);
 
+                    let stream_map = udp_map.clone();
                     tokio::spawn(async move {
                         while let Some(Ok(pkt)) = wisp_r.next().await {
                             udp_channel.send_to(&pkt, &dest, &src).unwrap();
                         }
                         info!("disconnected udp: {:?}", dest);
+                        stream_map.remove(&(src, dest));
                     });
                 }
             }
