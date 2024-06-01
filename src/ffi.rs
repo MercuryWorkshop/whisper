@@ -89,7 +89,7 @@ pub extern "C" fn whisper_init(fd: c_int, ws: *const c_char, mtu: c_ushort) -> b
             let (mux, socketaddr) = connect_to_wisp(&WispServer {
                 pty: None,
                 url: Some(Uri::try_from(ws).map_err(WhisperError::other)?),
-            })
+            }, false)
             .await
             .map_err(WhisperError::Other)?;
 

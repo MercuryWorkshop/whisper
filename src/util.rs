@@ -21,7 +21,7 @@ use tokio_rustls::{
 };
 use tokio_util::either::Either;
 use wisp_mux::{
-    extensions::udp::UdpProtocolExtensionBuilder,
+    extensions::{udp::UdpProtocolExtensionBuilder, ProtocolExtensionBuilder},
     ws::{Frame, LockedWebSocketWrite, WebSocketRead, WebSocketWrite},
     ClientMux, WispError,
 };
@@ -120,6 +120,7 @@ impl<L: WebSocketWrite + Send, R: WebSocketWrite + Send> WebSocketWrite
 
 pub async fn connect_to_wisp(
     opts: &WispServer,
+    v1: bool,
 ) -> Result<(ClientMux, Option<SocketAddr>), Box<dyn Error>> {
     let (rx, tx, socketaddr) = if let Some(pty) = &opts.pty {
         info!("Connecting to PTY: {:?}", pty);
@@ -187,7 +188,10 @@ pub async fn connect_to_wisp(
         unreachable!("neither pty nor url specified");
     };
 
-    let (mux, fut) = ClientMux::create(rx, tx, Some(&[Box::new(UdpProtocolExtensionBuilder())]))
+    let ext: &[Box<dyn ProtocolExtensionBuilder + Send + Sync>] =
+        &[Box::new(UdpProtocolExtensionBuilder())];
+
+    let (mux, fut) = ClientMux::create(rx, tx, if v1 { None } else { Some(ext) })
         .await?
         .with_udp_extension_required()
         .await?;
