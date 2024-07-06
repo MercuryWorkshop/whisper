@@ -191,10 +191,13 @@ pub async fn connect_to_wisp(
     let ext: &[Box<dyn ProtocolExtensionBuilder + Send + Sync>] =
         &[Box::new(UdpProtocolExtensionBuilder())];
 
-    let (mux, fut) = ClientMux::create(rx, tx, if v1 { None } else { Some(ext) })
-        .await?
-        .with_udp_extension_required()
-        .await?;
+    let muxresp = ClientMux::create(rx, tx, if v1 { None } else { Some(ext) }).await?;
+
+    let (mux, fut) = if v1 {
+        muxresp.with_no_required_extensions()
+    } else {
+        muxresp.with_udp_extension_required().await?
+    };
 
     tokio::spawn(async move {
         if let Err(err) = fut.await {
