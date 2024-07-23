@@ -86,7 +86,7 @@ pub enum EitherWebSocketRead<L: WebSocketRead, R: WebSocketRead> {
 
 #[async_trait]
 impl<L: WebSocketRead + Send, R: WebSocketRead + Send> WebSocketRead for EitherWebSocketRead<L, R> {
-	async fn wisp_read_frame(&mut self, tx: &LockedWebSocketWrite) -> Result<Frame, WispError> {
+	async fn wisp_read_frame(&mut self, tx: &LockedWebSocketWrite) -> Result<Frame<'static>, WispError> {
 		match self {
 			Self::Left(read) => read.wisp_read_frame(tx).await,
 			Self::Right(read) => read.wisp_read_frame(tx).await,
@@ -103,7 +103,7 @@ pub enum EitherWebSocketWrite<L: WebSocketWrite, R: WebSocketWrite> {
 impl<L: WebSocketWrite + Send, R: WebSocketWrite + Send> WebSocketWrite
 	for EitherWebSocketWrite<L, R>
 {
-	async fn wisp_write_frame(&mut self, frame: Frame) -> Result<(), WispError> {
+	async fn wisp_write_frame(&mut self, frame: Frame<'_>) -> Result<(), WispError> {
 		match self {
 			Self::Left(write) => write.wisp_write_frame(frame).await,
 			Self::Right(write) => write.wisp_write_frame(frame).await,
@@ -190,7 +190,7 @@ pub async fn connect_to_wisp(
 	};
 
 	let ext: &[Box<dyn ProtocolExtensionBuilder + Send + Sync>] =
-		&[Box::new(UdpProtocolExtensionBuilder())];
+		&[Box::new(UdpProtocolExtensionBuilder)];
 
 	let muxresp = ClientMux::create(rx, tx, if v1 { None } else { Some(ext) }).await?;
 

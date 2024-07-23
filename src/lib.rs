@@ -12,6 +12,7 @@ use futures_util::{
 };
 use log::{error, info};
 use lwip::NetStack;
+use tokio_util::compat::FuturesAsyncReadCompatExt;
 
 use std::{
 	error::Error,
@@ -110,7 +111,7 @@ impl<S: Stream> Stream for TimeoutStreamSink<S> {
 	}
 }
 
-impl<I, S: Sink<I, Error = std::io::Error>> Sink<I> for TimeoutStreamSink<S> {
+impl<S: for<'a> Sink<&'a [u8], Error = std::io::Error>> Sink<Vec<u8>> for TimeoutStreamSink<S> {
 	type Error = std::io::Error;
 
 	fn poll_ready(
@@ -123,10 +124,10 @@ impl<I, S: Sink<I, Error = std::io::Error>> Sink<I> for TimeoutStreamSink<S> {
 		self.0.as_mut().poll_ready(cx)
 	}
 
-	fn start_send(mut self: Pin<&mut Self>, item: I) -> Result<(), Self::Error> {
+	fn start_send(mut self: Pin<&mut Self>, item: Vec<u8>) -> Result<(), Self::Error> {
 		let duration = self.1;
 		self.2.as_mut().reset(Instant::now() + duration);
-		self.0.as_mut().start_send(item)
+		self.0.as_mut().start_send(&item)
 	}
 
 	fn poll_flush(
@@ -189,7 +190,8 @@ pub async fn start_whisper(
 						.await
 						.unwrap()
 						.into_io()
-						.into_asyncrw();
+						.into_asyncrw()
+						.compat();
 					drop(stream_mux);
 					info!("connected tcp: {:?}", dest);
 					if let Err(err) = copy_bidirectional(&mut stream, &mut wisp_stream).await {
