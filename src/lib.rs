@@ -69,7 +69,7 @@ pub struct Cli {
 pub struct WispServer {
 	/// Path to PTY device
 	#[arg(short, long)]
-	pub pty: Option<Vec<PathBuf>>,
+	pub pty: Option<PathBuf>,
 	/// Wisp server URL
 	#[arg(short, long)]
 	pub url: Option<Uri>,
