@@ -62,14 +62,14 @@ async fn main() -> Result<(), Box<dyn Error + 'static>> {
 					pty: None,
 					url: Some(local_url.build()?),
 				},
-				opts.wisp_v1,
+				opts.wisp_v2,
 			)
 			.await?
 			.0,
 			None,
 		)
 	} else {
-		connect_to_wisp(&opts.wisp, opts.wisp_v1).await?
+		connect_to_wisp(&opts.wisp, opts.wisp_v2).await?
 	};
 
 	info!("Creating TUN device with name: {:?}", opts.tun);

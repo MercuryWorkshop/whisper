@@ -59,9 +59,9 @@ pub struct Cli {
 	// Use cloudflared access. URL must be specified. You must be logged into cloudflared.
 	#[arg(short, long)]
 	pub cf: bool,
-	// Use wisp v1. May result in failures while forwarding UDP.
+	// Use wisp v2.
 	#[arg(long)]
-	pub wisp_v1: bool,
+	pub wisp_v2: bool,
 }
 
 #[derive(Debug, Args)]

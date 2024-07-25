@@ -86,7 +86,10 @@ pub enum EitherWebSocketRead<L: WebSocketRead, R: WebSocketRead> {
 
 #[async_trait]
 impl<L: WebSocketRead + Send, R: WebSocketRead + Send> WebSocketRead for EitherWebSocketRead<L, R> {
-	async fn wisp_read_frame(&mut self, tx: &LockedWebSocketWrite) -> Result<Frame<'static>, WispError> {
+	async fn wisp_read_frame(
+		&mut self,
+		tx: &LockedWebSocketWrite,
+	) -> Result<Frame<'static>, WispError> {
 		match self {
 			Self::Left(read) => read.wisp_read_frame(tx).await,
 			Self::Right(read) => read.wisp_read_frame(tx).await,
@@ -120,7 +123,7 @@ impl<L: WebSocketWrite + Send, R: WebSocketWrite + Send> WebSocketWrite
 
 pub async fn connect_to_wisp(
 	opts: &WispServer,
-	v1: bool,
+	v2: bool,
 ) -> Result<(ClientMux, Option<SocketAddr>), Box<dyn Error>> {
 	let (rx, tx, socketaddr) = if let Some(pty) = &opts.pty {
 		info!("Connecting to PTY: {:?}", pty);
@@ -191,12 +194,12 @@ pub async fn connect_to_wisp(
 	let ext: &[Box<dyn ProtocolExtensionBuilder + Send + Sync>] =
 		&[Box::new(UdpProtocolExtensionBuilder)];
 
-	let muxresp = ClientMux::create(rx, tx, if v1 { None } else { Some(ext) }).await?;
+	let muxresp = ClientMux::create(rx, tx, if v2 { Some(ext) } else { None }).await?;
 
-	let (mux, fut) = if v1 {
-		muxresp.with_no_required_extensions()
-	} else {
+	let (mux, fut) = if v2 {
 		muxresp.with_udp_extension_required().await?
+	} else {
+		muxresp.with_no_required_extensions()
 	};
 
 	tokio::spawn(async move {
