@@ -68,20 +68,20 @@ impl ConnProvider for FastwebsocketsConnProvider {
 				_ => None,
 			}))
 			.context("no port in wisp url")?;
+		let sock = lookup_host(format!(
+			"{}:{}",
+			self.url.host().context("no host in wisp url")?,
+			port,
+		))
+		.await
+		.context("failed to lookup host")?
+		.find(|x| x.is_ipv4())
+		.context("lookup host returned nothing")?;
 		let tcp_stream = tcp_socket
-			.connect(
-				lookup_host(format!(
-					"{}:{}",
-					self.url.host().context("no host in wisp url")?,
-					port,
-				))
-				.await
-				.context("failed to lookup host")?
-				.find(|x| x.is_ipv4())
-				.context("lookup host returned nothing")?,
-			)
+			.connect(sock)
 			.await
 			.context("failed to connect")?;
+		info!("Connected to {:?}", sock);
 
 		let stream = match self.url.scheme_str().context("no scheme in wisp url")? {
 			"ws" => Either::Left(tcp_stream),
@@ -155,7 +155,7 @@ struct LoggingInfoProvider;
 
 impl InfoProvider for LoggingInfoProvider {
 	fn on_motd(&self, motd: String) {
-		info!("Wisp server MOTD: {:?}", motd);
+		info!("Wisp server MOTD: {}", motd);
 	}
 
 	fn on_connect(&self) {
