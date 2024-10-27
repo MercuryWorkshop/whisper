@@ -1,0 +1,7 @@
+[workspace]
+resolver = "2"
+members = ["cli", "lib", "libwhisper"]
+
+[workspace.dependencies]
+wisp-mux = { git = "https://github.com/MercuryWorkshop/epoxy-tls" }
+# wisp-mux = { path = "../epoxy-tls/wisp" }

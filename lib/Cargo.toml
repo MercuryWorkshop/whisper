@@ -1,0 +1,16 @@
+[package]
+name = "whisper"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.91"
+event-listener = "5.3.1"
+futures-util = "0.3.31"
+log = { version = "0.4.22", features = ["std", "serde"] }
+netstack-smoltcp = { git = "https://github.com/automesh-network/netstack-smoltcp.git", version = "*" }
+pin-project-lite = "0.2.15"
+tokio = { version = "1.41.0", features = ["rt", "sync"] }
+tokio-util = { version = "0.7.12", features = ["compat", "io", "rt"] }
+tun2 = { version = "3.1.8", features = ["async"] }
+wisp-mux = { workspace = true }
