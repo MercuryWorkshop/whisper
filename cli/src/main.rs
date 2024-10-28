@@ -13,7 +13,7 @@ use hyper::{
 	Request, Uri,
 };
 use hyper_util::rt::TokioExecutor;
-use log::{info, LevelFilter};
+use log::{info, trace, LevelFilter};
 use sha2::{Digest, Sha256};
 use tokio::{
 	io::{stdin, AsyncBufReadExt, BufReader},
@@ -115,9 +115,12 @@ impl ConnProvider for FastwebsocketsConnProvider {
 			.header(SEC_WEBSOCKET_PROTOCOL, ":333333")
 			.body(Empty::<Bytes>::new())?;
 
+		trace!("calling fastwebsockets handshake");
 		let (ws, _) = handshake::client(&TokioExecutor::new(), req, stream).await?;
+		trace!("fastwebsockets handshake finished");
 		let (read, write) = ws.split(tokio::io::split);
 		let read = FragmentCollectorRead::new(read);
+		trace!("created fastwebsockets ws");
 
 		Ok((read, write))
 	}

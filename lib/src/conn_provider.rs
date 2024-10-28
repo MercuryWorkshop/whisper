@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Context;
-use log::{debug, error};
+use log::{debug, error, trace};
 use tokio::sync::{Mutex, MutexGuard};
 use tokio_util::task::TaskTracker;
 use wisp_mux::{
@@ -54,6 +54,7 @@ impl<P: ConnProvider + 'static, I: InfoProvider + 'static> ConnProviderWrapper<P
 			guard.close().await?;
 		}
 
+		trace!("calling connprovider for transport");
 		let (read, write) = self
 			.provider
 			.lock()
@@ -61,6 +62,7 @@ impl<P: ConnProvider + 'static, I: InfoProvider + 'static> ConnProviderWrapper<P
 			.connect()
 			.await
 			.context("failed to connect with connprovider")?;
+		trace!("got transport from connprovider");
 
 		let extensions = vec![
 			UdpProtocolExtensionBuilder.into(),
@@ -117,12 +119,14 @@ impl<P: ConnProvider + 'static, I: InfoProvider + 'static> ConnProviderWrapper<P
 
 		let v2 = WispV2Handshake::new_with_middleware(extensions, middleware);
 
+		trace!("handshaking");
 		let (mux, fut) = ClientMux::create(read, write, Some(v2))
 			.await
 			.context("failed to perform handshake")?
 			.with_required_extensions(&[UdpProtocolExtension::ID])
 			.await
 			.context("required extensions not found")?;
+		trace!("handshaked");
 
 		if let Some(ext) = mux
 			.supported_extensions
@@ -140,6 +144,7 @@ impl<P: ConnProvider + 'static, I: InfoProvider + 'static> ConnProviderWrapper<P
 			cloned_client.lock().await.take()
 		});
 
+		trace!("replacing multiplexor");
 		guard.replace(mux);
 
 		Ok(())
