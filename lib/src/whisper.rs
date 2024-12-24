@@ -13,7 +13,10 @@ use tokio::{
 };
 use tokio_util::{compat::FuturesAsyncReadCompatExt, sync::CancellationToken, task::TaskTracker};
 use tun2::AsyncDevice;
-use wisp_mux::{MuxStreamAsyncRead, MuxStreamWrite, StreamType};
+use wisp_mux::{
+	ws::{WebSocketRead, WebSocketWrite},
+	MuxStreamAsyncRead, MuxStreamWrite, StreamType,
+};
 
 use crate::{conn_provider::ConnProviderWrapper, ConnProvider, InfoProvider};
 
@@ -38,7 +41,10 @@ async fn copy_read_fast(
 	}
 }
 
-async fn copy_write_fast(muxtx: MuxStreamWrite, tcprx: ReadHalf<TcpStream>) -> anyhow::Result<()> {
+async fn copy_write_fast<W: WebSocketWrite + Send + 'static>(
+	muxtx: MuxStreamWrite<W>,
+	tcprx: ReadHalf<TcpStream>,
+) -> anyhow::Result<()> {
 	let mut tcprx = BufReader::with_capacity(4096, tcprx);
 	loop {
 		let buf = tcprx.fill_buf().await?;
@@ -90,11 +96,16 @@ fn forward_tun(tun: AsyncDevice, stack: Stack, tracker: TaskTracker, canceller: 
 	});
 }
 
-fn forward_tcp<C: ConnProvider, I: InfoProvider>(
+fn forward_tcp<
+	R: WebSocketRead + Send + Sync + 'static,
+	W: WebSocketWrite + Send + 'static,
+	C: ConnProvider<R, W>,
+	I: InfoProvider,
+>(
 	tracker: TaskTracker,
 	canceller: CancellationToken,
 	mut tcp_listener: TcpListener,
-	provider: ConnProviderWrapper<C, I>,
+	provider: ConnProviderWrapper<R, W, C, I>,
 ) {
 	tracker.clone().spawn(async move {
 		let fut = async {
@@ -139,15 +150,20 @@ fn forward_tcp<C: ConnProvider, I: InfoProvider>(
 	});
 }
 
-fn forward_udp<C: ConnProvider, I: InfoProvider>(
+fn forward_udp<
+	R: WebSocketRead + Send + Sync + 'static,
+	W: WebSocketWrite + Send + 'static,
+	C: ConnProvider<R, W>,
+	I: InfoProvider,
+>(
 	tracker: TaskTracker,
 	canceller: CancellationToken,
 	udp_socket: UdpSocket,
-	provider: ConnProviderWrapper<C, I>,
+	provider: ConnProviderWrapper<R, W, C, I>,
 ) {
 	type MapKey = (SocketAddr, SocketAddr);
-	type MapValue = (MuxStreamWrite, Arc<Event<bool>>);
-	let map: Arc<Mutex<HashMap<MapKey, MapValue>>> = Arc::new(Mutex::new(HashMap::new()));
+	type MapValue<W> = (MuxStreamWrite<W>, Arc<Event<bool>>);
+	let map: Arc<Mutex<HashMap<MapKey, MapValue<W>>>> = Arc::new(Mutex::new(HashMap::new()));
 
 	let (mut read, write) = udp_socket.split();
 	let write = Arc::new(Mutex::new(write));
@@ -230,7 +246,7 @@ fn forward_udp<C: ConnProvider, I: InfoProvider>(
 				tracker.spawn(async move {
 					let fut = async {
 						let fut = async {
-							while let Some(pkt) = rx.read().await {
+							while let Some(pkt) = rx.read().await? {
 								write.lock().await.send((pkt.to_vec(), dst, src)).await?;
 							}
 
@@ -260,21 +276,37 @@ fn forward_udp<C: ConnProvider, I: InfoProvider>(
 	});
 }
 
-pub struct WhisperConfig<C, I>
+pub struct WhisperConfig<R, W, C, I>
 where
-	C: ConnProvider + 'static,
+	R: WebSocketRead + Send + Sync + 'static,
+	W: WebSocketWrite + Send + 'static,
+	C: ConnProvider<R, W> + 'static,
 	I: InfoProvider,
 {
 	pub tun: AsyncDevice,
 	pub connection: C,
 	pub info: I,
+
+	phantom: std::marker::PhantomData<(R, W)>,
 }
 
-impl<C, I> WhisperConfig<C, I>
+impl<R, W, C, I> WhisperConfig<R, W, C, I>
 where
-	C: ConnProvider + 'static,
+	R: WebSocketRead + Send + Sync + 'static,
+	W: WebSocketWrite + Send + 'static,
+	C: ConnProvider<R, W> + 'static,
 	I: InfoProvider + 'static,
 {
+	pub fn new(tun: AsyncDevice, conn: C, info: I) -> Self {
+		Self {
+			tun,
+			connection: conn,
+			info,
+
+			phantom: std::marker::PhantomData::default()
+		}
+	}
+
 	pub async fn start(self) -> anyhow::Result<()> {
 		let tracker = TaskTracker::new();
 		let canceller = CancellationToken::new();

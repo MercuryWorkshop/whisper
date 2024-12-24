@@ -12,30 +12,51 @@ use wisp_mux::{
 		udp::{UdpProtocolExtension, UdpProtocolExtensionBuilder},
 		ProtocolExtensionBuilderVecExt, ProtocolExtensionVecExt,
 	},
+	ws::{WebSocketRead, WebSocketWrite},
 	ClientMux, MuxStream, StreamType, WispError, WispV2Handshake, WispV2Middleware,
 };
 
 use crate::{ConnProvider, InfoProvider};
 
-pub struct ConnProviderWrapper<P: ConnProvider + 'static, I: InfoProvider + 'static> {
+pub struct ConnProviderWrapper<
+	R: WebSocketRead + Send + Sync + 'static,
+	W: WebSocketWrite + Send + 'static,
+	P: ConnProvider<R, W> + 'static,
+	I: InfoProvider + 'static,
+> {
 	provider: Arc<Mutex<P>>,
 	info: Arc<I>,
-	client: Arc<Mutex<Option<ClientMux>>>,
+	client: Arc<Mutex<Option<ClientMux<W>>>>,
 	tracker: TaskTracker,
+
+	phantom: std::marker::PhantomData<R>,
 }
 
-impl<P: ConnProvider + 'static, I: InfoProvider + 'static> Clone for ConnProviderWrapper<P, I> {
+impl<
+		R: WebSocketRead + Send + Sync + 'static,
+		W: WebSocketWrite + Send + 'static,
+		P: ConnProvider<R, W> + 'static,
+		I: InfoProvider + 'static,
+	> Clone for ConnProviderWrapper<R, W, P, I>
+{
 	fn clone(&self) -> Self {
 		Self {
 			provider: self.provider.clone(),
 			info: self.info.clone(),
 			client: self.client.clone(),
 			tracker: self.tracker.clone(),
+			phantom: std::marker::PhantomData,
 		}
 	}
 }
 
-impl<P: ConnProvider + 'static, I: InfoProvider + 'static> ConnProviderWrapper<P, I> {
+impl<
+		R: WebSocketRead + Send + Sync + 'static,
+		W: WebSocketWrite + Send + 'static,
+		P: ConnProvider<R, W> + 'static,
+		I: InfoProvider + 'static,
+	> ConnProviderWrapper<R, W, P, I>
+{
 	pub fn new(provider: P, info: Arc<I>, tracker: TaskTracker) -> Self {
 		Self {
 			provider: Arc::new(Mutex::new(provider)),
@@ -43,12 +64,14 @@ impl<P: ConnProvider + 'static, I: InfoProvider + 'static> ConnProviderWrapper<P
 
 			info,
 			tracker,
+
+			phantom: std::marker::PhantomData,
 		}
 	}
 
 	async fn create_client(
 		&self,
-		mut guard: MutexGuard<'_, Option<ClientMux>>,
+		mut guard: MutexGuard<'_, Option<ClientMux<W>>>,
 	) -> anyhow::Result<()> {
 		if let Some(guard) = guard.as_ref() {
 			guard.close().await?;
@@ -159,7 +182,7 @@ impl<P: ConnProvider + 'static, I: InfoProvider + 'static> ConnProviderWrapper<P
 		stream_type: StreamType,
 		host: String,
 		port: u16,
-	) -> anyhow::Result<MuxStream> {
+	) -> anyhow::Result<MuxStream<W>> {
 		Box::pin(async {
 			let locked = self.client.lock().await;
 			if let Some(mux) = locked.as_ref() {

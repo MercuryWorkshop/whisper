@@ -17,9 +17,11 @@ hyper-util = { version = "0.1.9", features = ["tokio"] }
 log = { version = "0.4.22", features = ["std", "serde"] }
 sha2 = "0.10.8"
 tokio = { version = "1.41.0", features = ["full"] }
-tun2 = { version = "3.1.8", features = ["async"] }
+tun2 = { version = "4.0.0", features = ["async"] }
 webpki-roots = "0.26.6"
 whisper = { version = "*", path = "../lib" }
 wisp-mux = { workspace = true, features = ["fastwebsockets"] }
-tokio-util = "0.7.12"
+tokio-util = { version = "0.7.12", features = ["io"] }
+pin-project-lite = "0.2.15"
+futures-util = "0.3.31"
 

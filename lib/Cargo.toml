@@ -12,5 +12,5 @@ netstack-smoltcp = { git = "https://github.com/automesh-network/netstack-smoltcp
 pin-project-lite = "0.2.15"
 tokio = { version = "1.41.0", features = ["rt", "sync"] }
 tokio-util = { version = "0.7.12", features = ["compat", "io", "rt"] }
-tun2 = { version = "3.1.8", features = ["async"] }
+tun2 = { version = "4.0.0", features = ["async"] }
 wisp-mux = { workspace = true }

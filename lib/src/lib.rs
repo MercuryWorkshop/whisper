@@ -9,16 +9,10 @@ use wisp_mux::{
 	ws::{WebSocketRead, WebSocketWrite},
 };
 
-pub trait ConnProvider: Sync + Send {
-	fn connect(
-		&mut self,
-	) -> impl Future<
-		Output = anyhow::Result<(
-			impl WebSocketRead + Send + 'static,
-			impl WebSocketWrite + Send + 'static,
-		)>,
-	> + Sync
-	       + Send;
+pub trait ConnProvider<R: WebSocketRead + Send + Sync + 'static, W: WebSocketWrite + Send + 'static>:
+	Sync + Send
+{
+	fn connect(&mut self) -> impl Future<Output = anyhow::Result<(R, W)>> + Sync + Send;
 
 	fn get_password_auth(
 		&mut self,

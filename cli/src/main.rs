@@ -1,10 +1,10 @@
-use std::sync::Arc;
+use std::{io::Cursor, sync::Arc};
 
 use anyhow::{bail, Context, Result};
 use bytes::Bytes;
 use clap::Parser;
 use ed25519_dalek::pkcs8::DecodePrivateKey;
-use fastwebsockets::{handshake, FragmentCollectorRead};
+use fastwebsockets::{handshake, WebSocketRead, WebSocketWrite};
 use http_body_util::Empty;
 use hyper::{
 	header::{
@@ -12,25 +12,26 @@ use hyper::{
 	},
 	Request, Uri,
 };
-use hyper_util::rt::TokioExecutor;
+use hyper_util::rt::{TokioExecutor, TokioIo};
 use log::{info, trace, LevelFilter};
 use sha2::{Digest, Sha256};
 use tokio::{
-	io::{stdin, AsyncBufReadExt, BufReader},
-	net::{lookup_host, TcpSocket},
+	io::{stdin, AsyncBufReadExt, BufReader, ReadHalf, WriteHalf},
+	net::{lookup_host, TcpSocket, TcpStream},
 };
 use tokio_rustls::{
+	client::TlsStream,
 	rustls::{pki_types::ServerName, ClientConfig, RootCertStore},
 	TlsConnector,
 };
 use tokio_util::either::Either;
 use tun2::{AsyncDevice, Configuration, Device};
+use util_chain::Chain;
 use webpki_roots::TLS_SERVER_ROOTS;
 use whisper::{ConnProvider, InfoProvider, WhisperConfig};
-use wisp_mux::{
-	extensions::cert::SigningKey,
-	ws::{WebSocketRead, WebSocketWrite},
-};
+use wisp_mux::extensions::cert::SigningKey;
+
+mod util_chain;
 
 fn tls_connector() -> TlsConnector {
 	let root_store = RootCertStore::from_iter(TLS_SERVER_ROOTS.iter().cloned());
@@ -42,18 +43,25 @@ fn tls_connector() -> TlsConnector {
 	TlsConnector::from(Arc::new(config))
 }
 
+type Stream = Either<TcpStream, TlsStream<TcpStream>>;
+
 struct FastwebsocketsConnProvider {
 	iface: String,
 	url: Uri,
 
 	key: Option<SigningKey>,
 }
-impl ConnProvider for FastwebsocketsConnProvider {
+impl
+	ConnProvider<
+		WebSocketRead<Chain<Cursor<Bytes>, ReadHalf<Stream>>>,
+		WebSocketWrite<WriteHalf<Stream>>,
+	> for FastwebsocketsConnProvider
+{
 	async fn connect(
 		&mut self,
 	) -> anyhow::Result<(
-		impl WebSocketRead + Send + 'static,
-		impl WebSocketWrite + Send + 'static,
+		WebSocketRead<Chain<Cursor<Bytes>, ReadHalf<Stream>>>,
+		WebSocketWrite<WriteHalf<Stream>>,
 	)> {
 		let tcp_socket = TcpSocket::new_v4().context("failed to create socket")?;
 		tcp_socket
@@ -83,7 +91,7 @@ impl ConnProvider for FastwebsocketsConnProvider {
 			.context("failed to connect")?;
 		info!("Connected to {:?}", sock);
 
-		let stream = match self.url.scheme_str().context("no scheme in wisp url")? {
+		let stream: Stream = match self.url.scheme_str().context("no scheme in wisp url")? {
 			"ws" => Either::Left(tcp_stream),
 			"wss" => {
 				let tls_connector = tls_connector();
@@ -118,8 +126,11 @@ impl ConnProvider for FastwebsocketsConnProvider {
 		trace!("calling fastwebsockets handshake");
 		let (ws, _) = handshake::client(&TokioExecutor::new(), req, stream).await?;
 		trace!("fastwebsockets handshake finished");
-		let (read, write) = ws.split(tokio::io::split);
-		let read = FragmentCollectorRead::new(read);
+		let (read, write) = ws.split(|x| {
+			let inner = x.into_inner().downcast::<TokioIo<Stream>>().unwrap();
+			let (rx, tx) = tokio::io::split(inner.io.into_inner());
+			(util_chain::chain(Cursor::new(inner.read_buf), rx), tx)
+		});
 		trace!("created fastwebsockets ws");
 
 		Ok((read, write))
@@ -217,13 +228,9 @@ async fn main() -> Result<()> {
 		key: None,
 	};
 
-	WhisperConfig {
-		tun,
-		connection: conn,
-		info: LoggingInfoProvider,
-	}
-	.start()
-	.await?;
+	WhisperConfig::new(tun, conn, LoggingInfoProvider)
+		.start()
+		.await?;
 
 	Ok(())
 }
