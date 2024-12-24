@@ -1,4 +1,4 @@
-use std::{io::Cursor, sync::Arc};
+use std::{io::Cursor, net::SocketAddr, sync::Arc};
 
 use anyhow::{bail, Context, Result};
 use bytes::Bytes;
@@ -43,11 +43,32 @@ fn tls_connector() -> TlsConnector {
 	TlsConnector::from(Arc::new(config))
 }
 
+async fn resolve_host(url: &Uri) -> Result<SocketAddr> {
+	let port = url
+		.port_u16()
+		.or(url.scheme_str().and_then(|x| match x {
+			"ws" => Some(80),
+			"wss" => Some(443),
+			_ => None,
+		}))
+		.context("no port in wisp url")?;
+	lookup_host(format!(
+		"{}:{}",
+		url.host().context("no host in wisp url")?,
+		port,
+	))
+	.await
+	.context("failed to lookup host")?
+	.find(|x| x.is_ipv4())
+	.context("lookup host returned nothing")
+}
+
 type Stream = Either<TcpStream, TlsStream<TcpStream>>;
 
 struct FastwebsocketsConnProvider {
 	iface: String,
 	url: Uri,
+	sock: SocketAddr,
 
 	key: Option<SigningKey>,
 }
@@ -67,29 +88,11 @@ impl
 		tcp_socket
 			.bind_device(Some(self.iface.as_bytes()))
 			.context("failed to bind to device")?;
-		let port = self
-			.url
-			.port_u16()
-			.or(self.url.scheme_str().and_then(|x| match x {
-				"ws" => Some(80),
-				"wss" => Some(443),
-				_ => None,
-			}))
-			.context("no port in wisp url")?;
-		let sock = lookup_host(format!(
-			"{}:{}",
-			self.url.host().context("no host in wisp url")?,
-			port,
-		))
-		.await
-		.context("failed to lookup host")?
-		.find(|x| x.is_ipv4())
-		.context("lookup host returned nothing")?;
 		let tcp_stream = tcp_socket
-			.connect(sock)
+			.connect(self.sock)
 			.await
 			.context("failed to connect")?;
-		info!("Connected to {:?}", sock);
+		info!("Connected to {:?}", self.sock);
 
 		let stream: Stream = match self.url.scheme_str().context("no scheme in wisp url")? {
 			"ws" => Either::Left(tcp_stream),
@@ -222,6 +225,9 @@ async fn main() -> Result<()> {
 	info!("Created TUN device");
 
 	let conn = FastwebsocketsConnProvider {
+		sock: resolve_host(&cli.wisp)
+			.await
+			.context("failed to resolve url")?,
 		url: cli.wisp,
 		iface: cli.iface,
 
